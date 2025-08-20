@@ -146,23 +146,6 @@ export default async function Home() {
 				</a>
 			</p>
 
-			<h3>Server Startup</h3>
-			<p>
-				Next.js includes an <code>instrumentation</code> file that runs some
-				code when the server starts.
-			</p>
-			<p>
-				This instrumentation file will be stabilized in Next.js 15. A common use
-				case is reading secrets from remote locations like Vault or 1Password.
-				You can try this by setting the appropriate variables in your{" "}
-				<code>.env</code> file for Vault, though it's not required for the demo.
-			</p>
-			<p>
-				<a href="https://nextjs.org/docs/app/building-your-application/optimizing/instrumentation">
-					Read the docs
-				</a>
-			</p>
-
 			<h3>Environment Variables</h3>
 			<p>
 				Next.js supports loading environment variables from <code>.env</code>{" "}

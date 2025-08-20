@@ -41,3 +41,37 @@ next-env.d.ts
 
 # for demo
 .cache
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Ansible
+*.retry
+.vault_pass
+ansible.cfg
+hosts
+inventory
+*.log
+.ansible/
+ansible-playbook.log
+*.pyc
+__pycache__/
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,104 @@
+- name: Configure Ubuntu VM - install git, nginx, docker, docker-compose
+  hosts: my_vm
+  become: yes
+  vars:
+    docker_apt_key_url: https://download.docker.com/linux/ubuntu/gpg
+    docker_repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+    docker_compose_version: "2.22.2"
+
+  tasks:
+    - name: Ensure apt cache is up to date
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+        state: present
+
+    # --- Install Git & Nginx ---
+    - name: Install git and nginx
+      apt:
+        name:
+          - git
+          - nginx
+        state: present
+
+    - name: Ensure nginx is enabled and running
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+    # --- Install Docker (official repo) ---
+    - name: Add Docker GPG key
+      apt_key:
+        url: "{{ docker_apt_key_url }}"
+        state: present
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: "{{ docker_repo }}"
+        state: present
+        filename: docker
+
+    - name: Update apt after adding docker repo
+      apt:
+        update_cache: yes
+
+    - name: Install docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Ensure docker service is running and enabled
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user | default('yassine') }}"
+        groups: docker
+        append: yes
+
+    # --- Install docker-compose plugin ---
+    - name: Install Docker Compose plugin
+      apt:
+        name: docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Verify docker and docker-compose versions (debug)
+      command: docker --version
+      register: docker_ver
+      changed_when: false
+
+    - name: Show docker version
+      debug:
+        var: docker_ver.stdout
+
+    - name: Check docker compose version
+      command: docker compose version
+      register: compose_ver
+      changed_when: false
+
+    - name: Show compose version
+      debug:
+        var: compose_ver.stdout
+
+  handlers:
+    - name: reload nginx
+      systemd:
+        name: nginx
+        state: reloaded

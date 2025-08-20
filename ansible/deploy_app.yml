@@ -1,0 +1,275 @@
+---
+- name: Deploy Next.js application with PostgreSQL
+  hosts: my_vm
+  become: yes
+  vars:
+    app_dir: /home/yassine/myapp
+    repo_url: "git@github.com:Ret2Hell/next-self-host.git"
+    postgres_user: "myuser"
+    postgres_db: "mydatabase"
+    secret_key: "my-secret"
+    next_public_safe_key: "safe-key"
+    server_name: "{{ ansible_host }}"
+    nginx_site_name: "myapp"
+
+  tasks:
+    # --- Setup SSH for GitHub access ---
+    - name: Ensure .ssh directory exists for user
+      file:
+        path: /home/yassine/.ssh
+        state: directory
+        owner: yassine
+        group: yassine
+        mode: '0700'
+      become_user: yassine
+      become: no
+
+    - name: Check if SSH key exists
+      stat:
+        path: /home/yassine/.ssh/id_rsa
+      register: ssh_key_stat
+      become_user: yassine
+      become: no
+
+    - name: Generate SSH key pair if not exists
+      openssh_keypair:
+        path: /home/yassine/.ssh/id_rsa
+        type: rsa
+        size: 4096
+        owner: yassine
+        group: yassine
+        mode: '0600'
+      when: not ssh_key_stat.stat.exists
+      become_user: yassine
+      become: no
+
+    - name: Read public key content
+      slurp:
+        src: /home/yassine/.ssh/id_rsa.pub
+      register: public_key_content
+      become_user: yassine
+      become: no
+
+    - name: Display public key for GitHub setup
+      debug:
+        msg: |
+          Add this public key to your GitHub repository deploy keys:
+          {{ public_key_content.content | b64decode }}
+          
+          Go to: https://github.com/Ret2Hell/next-self-host/settings/keys
+          and add this as a deploy key with read access.
+
+    - name: Add GitHub to known hosts
+      known_hosts:
+        name: github.com
+        key: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+        state: present
+      become_user: yassine
+      become: no
+
+    - name: Add GitHub RSA key to known hosts
+      known_hosts:
+        name: github.com
+        key: "github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk="
+        state: present
+      become_user: yassine
+      become: no
+
+    # --- Generate database password ---
+    - name: Generate random PostgreSQL password
+      shell: openssl rand -base64 12
+      register: postgres_password_result
+      changed_when: false
+
+    - name: Set PostgreSQL password variable
+      set_fact:
+        postgres_password: "{{ postgres_password_result.stdout }}"
+
+    # --- Clone or update repository ---
+    - name: Check if app directory exists
+      stat:
+        path: "{{ app_dir }}"
+      register: app_dir_stat
+
+    - name: Clone repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        force: yes
+        accept_hostkey: yes
+      become_user: yassine
+      become: no
+      when: not app_dir_stat.stat.exists
+
+    - name: Pull latest changes if directory exists
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        force: yes
+      become_user: yassine
+      become: no
+      when: app_dir_stat.stat.exists
+
+    # --- Create environment file ---
+    - name: Create .env file
+      template:
+        src: env.j2
+        dest: "{{ app_dir }}/.env"
+        owner: yassine
+        group: yassine
+        mode: '0600'
+
+    # --- Configure Nginx ---
+    - name: Remove old Nginx configuration
+      file:
+        path: /etc/nginx/sites-enabled/{{ nginx_site_name }}
+        state: absent
+      notify: restart nginx
+
+    - name: Remove old Nginx site configuration
+      file:
+        path: /etc/nginx/sites-available/{{ nginx_site_name }}
+        state: absent
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+
+    - name: Remove default Nginx configuration
+      file:
+        path: /etc/nginx/sites-available/default
+        state: absent
+
+    - name: Create Nginx configuration
+      template:
+        src: nginx.j2
+        dest: /etc/nginx/sites-available/{{ nginx_site_name }}
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/{{ nginx_site_name }}
+        dest: /etc/nginx/sites-enabled/{{ nginx_site_name }}
+        state: link
+      notify: restart nginx
+
+    - name: Open HTTP port in firewall
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+        comment: 'Allow HTTP traffic'
+
+    # --- Deploy with Docker Compose ---
+    - name: Stop existing containers
+      shell: |
+        cd {{ app_dir }}
+        docker compose down || true
+      become_user: yassine
+
+    - name: Clean Docker build cache
+      shell: |
+        cd {{ app_dir }}
+        docker builder prune -f
+      become_user: yassine
+
+    - name: Build and start containers (without cache)
+      shell: |
+        cd {{ app_dir }}
+        docker compose build --no-cache
+        docker compose up -d
+      become_user: yassine
+
+    - name: Wait for containers to start
+      pause:
+        seconds: 15
+
+    - name: Wait for PostgreSQL to be ready
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec db pg_isready -U {{ postgres_user }} -d {{ postgres_db }}
+      register: postgres_ready
+      until: postgres_ready.rc == 0
+      retries: 10
+      delay: 5
+      become_user: yassine
+
+    - name: Create database tables
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec db psql -U {{ postgres_user }} -d {{ postgres_db }} -c "
+        CREATE TABLE IF NOT EXISTS todos (
+          id SERIAL PRIMARY KEY,
+          content VARCHAR(255) NOT NULL,
+          completed BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT NOW()
+        );"
+      become_user: yassine
+      register: table_creation_result
+
+    - name: Display table creation results
+      debug:
+        var: table_creation_result.stdout_lines
+
+    - name: Verify table creation
+      shell: |
+        cd {{ app_dir }}
+        docker compose exec db psql -U {{ postgres_user }} -d {{ postgres_db }} -c "\dt"
+      become_user: yassine
+      register: table_list_result
+
+    - name: Display database tables
+      debug:
+        var: table_list_result.stdout_lines
+
+    - name: Check container status
+      shell: |
+        cd {{ app_dir }}
+        docker compose ps
+      register: container_status
+      become_user: yassine
+
+    - name: Display container status
+      debug:
+        var: container_status.stdout_lines
+
+    - name: Verify containers are running
+      shell: |
+        cd {{ app_dir }}
+        docker compose ps | grep "Up" || exit 1
+      become_user: yassine
+
+  handlers:
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+  post_tasks:
+    - name: Display deployment information
+      debug:
+        msg: |
+          ================================================
+          Deployment completed successfully!
+          ================================================
+          
+          Next.js app is available at:
+          - From server: http://localhost
+          - From your local machine: http://{{ ansible_host }}
+          
+          PostgreSQL database is running on port 5432
+          
+          Environment variables created:
+          - POSTGRES_USER: {{ postgres_user }}
+          - POSTGRES_PASSWORD: {{ postgres_password }}
+          - POSTGRES_DB: {{ postgres_db }}
+          - SECRET_KEY: {{ secret_key }}
+          - NEXT_PUBLIC_SAFE_KEY: {{ next_public_safe_key }}
+          
+          Container status:
+          {{ container_status.stdout }}

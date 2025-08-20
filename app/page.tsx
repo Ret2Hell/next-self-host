@@ -14,7 +14,7 @@ export default async function Home() {
 
 	return (
 		<section>
-			<h1>Next.js Self Hosted</h1>
+			<h1>Next.js Self Hosted (2)</h1>
 
 			<h3>Data Fetching</h3>
 			<p>Random Pokemon: {pokemon.name}</p>

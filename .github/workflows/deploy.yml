@@ -17,6 +17,49 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Get GitHub Actions Runner IP
+      id: ip
+      run: |
+        RUNNER_IP=$(curl -s https://ipinfo.io/ip)
+        echo "runner_ip=$RUNNER_IP" >> $GITHUB_OUTPUT
+        echo "GitHub Actions Runner IP: $RUNNER_IP"
+        
+    - name: Install Azure CLI
+      run: |
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        
+    - name: Login to Azure and allow GitHub Actions IP
+      env:
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      run: |
+        # Login to Azure
+        az login --service-principal \
+          --username $AZURE_CLIENT_ID \
+          --password $AZURE_CLIENT_SECRET \
+          --tenant $AZURE_TENANT_ID
+        
+        az account set --subscription $AZURE_SUBSCRIPTION_ID
+        
+        # Add temporary security rule for GitHub Actions runner IP
+        az network nsg rule create \
+          --resource-group "my-vm-test" \
+          --nsg-name "nsg-my-vm-ssh" \
+          --name "TempGitHubActions-${{ github.run_id }}" \
+          --priority 150 \
+          --source-address-prefixes ${{ steps.ip.outputs.runner_ip }}/32 \
+          --destination-port-ranges 22 \
+          --access Allow \
+          --protocol Tcp \
+          --description "Temporary rule for GitHub Actions runner ${{ github.run_id }}"
+          
+        echo "Temporary SSH access granted for IP: ${{ steps.ip.outputs.runner_ip }}"
+        
+    - name: Wait for NSG rule to apply
+      run: sleep 10
+      
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
@@ -62,6 +105,31 @@ jobs:
             exit 1
           fi
         '
+        
+    - name: Cleanup temporary Azure NSG rule
+      if: always()
+      env:
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      run: |
+        # Login to Azure
+        az login --service-principal \
+          --username $AZURE_CLIENT_ID \
+          --password $AZURE_CLIENT_SECRET \
+          --tenant $AZURE_TENANT_ID
+        
+        az account set --subscription $AZURE_SUBSCRIPTION_ID
+        
+        # Remove temporary security rule
+        az network nsg rule delete \
+          --resource-group "my-vm-test" \
+          --nsg-name "nsg-my-vm-ssh" \
+          --name "TempGitHubActions-${{ github.run_id }}" \
+          || echo "Rule may have already been deleted or didn't exist"
+          
+        echo "Temporary SSH access rule cleaned up"
         
     - name: Notify deployment status
       if: always()

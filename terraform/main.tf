@@ -67,6 +67,23 @@ resource "azurerm_network_security_rule" "allow_ssh_from_my_ip" {
   description                = "Allow SSH from my IP only"
 }
 
+// Allow HTTP (port 80) from anywhere
+resource "azurerm_network_security_rule" "allow_http" {
+  name                        = "Allow-HTTP"
+  resource_group_name         = azurerm_resource_group.test.name
+  network_security_group_name = azurerm_network_security_group.nsg.name
+
+  priority                   = 200
+  direction                  = "Inbound"
+  access                     = "Allow"
+  protocol                   = "Tcp"
+  source_port_range          = "*"
+  destination_port_range     = "80"
+  source_address_prefix      = "0.0.0.0/0"
+  destination_address_prefix = "*"
+  description                = "Allow HTTP from internet"
+}
+
 resource "azurerm_network_interface_security_group_association" "nic_nsg_assoc" {
   network_interface_id        = azurerm_network_interface.nic.id
   network_security_group_id   = azurerm_network_security_group.nsg.id

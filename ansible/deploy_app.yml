@@ -165,6 +165,47 @@
         proto: tcp
         comment: 'Allow HTTP traffic'
 
+    - name: Open HTTPS port in firewall
+      ufw:
+        rule: allow
+        port: '443'
+        proto: tcp
+        comment: 'Allow HTTPS traffic'
+
+    # --- SSL Certificate Generation ---
+    - name: Create SSL directory
+      file:
+        path: /etc/ssl/private
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Check if SSL certificate exists
+      stat:
+        path: /etc/ssl/certs/nginx-selfsigned.crt
+      register: ssl_cert_stat
+
+    - name: Generate self-signed SSL certificate
+      shell: |
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /etc/ssl/private/nginx-selfsigned.key \
+          -out /etc/ssl/certs/nginx-selfsigned.crt \
+          -subj "/C=US/ST=State/L=City/O=Organization/CN={{ ansible_host }}"
+      when: not ssl_cert_stat.stat.exists
+
+    - name: Set SSL certificate permissions
+      file:
+        path: /etc/ssl/private/nginx-selfsigned.key
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Generate strong DH parameters (this may take a while)
+      shell: openssl dhparam -out /etc/ssl/certs/dhparam.pem 2048
+      args:
+        creates: /etc/ssl/certs/dhparam.pem
+
     # --- Deploy with Docker Compose ---
     - name: Stop existing containers
       shell: |
@@ -255,12 +296,19 @@
       debug:
         msg: |
           ================================================
-          Deployment completed successfully!
+          Deployment completed successfully with HTTPS!
           ================================================
           
           Next.js app is available at:
-          - From server: http://localhost
-          - From your local machine: http://{{ ansible_host }}
+          - HTTPS (recommended): https://{{ ansible_host }}
+          - HTTP (redirects to HTTPS): http://{{ ansible_host }}
+          - From server: http://localhost (internal only)
+          
+          SSL Certificate Information:
+          - Self-signed certificate generated for IP: {{ ansible_host }}
+          - Certificate valid for 365 days
+          - Browser will show security warning (this is normal for self-signed certs)
+          - Click "Advanced" -> "Continue to site" to proceed
           
           PostgreSQL database is running on port 5432
           
@@ -273,3 +321,8 @@
           
           Container status:
           {{ container_status.stdout }}
+          
+          Security Notes:
+          - All HTTP traffic is automatically redirected to HTTPS
+          - Strong SSL/TLS configuration enabled
+          - Security headers added for protection

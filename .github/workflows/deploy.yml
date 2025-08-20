@@ -48,7 +48,7 @@ jobs:
           --resource-group "my-vm-test" \
           --nsg-name "nsg-my-vm-ssh" \
           --name "TempGitHubActions-${{ github.run_id }}" \
-          --priority 99 \
+          --priority 100 \
           --source-address-prefixes ${{ steps.ip.outputs.runner_ip }}/32 \
           --destination-port-ranges 22 \
           --access Allow \

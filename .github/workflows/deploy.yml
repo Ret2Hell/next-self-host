@@ -48,11 +48,11 @@ jobs:
           --resource-group "my-vm-test" \
           --nsg-name "nsg-my-vm-ssh" \
           --name "TempGitHubActions-${{ github.run_id }}" \
-          --priority 150 \
+          --priority 99 \
           --source-address-prefixes ${{ steps.ip.outputs.runner_ip }}/32 \
           --destination-port-ranges 22 \
           --access Allow \
-          --protocol Tcp \
+          --protocol TCP \
           --description "Temporary rule for GitHub Actions runner ${{ github.run_id }}"
           
         echo "Temporary SSH access granted for IP: ${{ steps.ip.outputs.runner_ip }}"
